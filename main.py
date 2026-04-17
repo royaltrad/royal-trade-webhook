@@ -25,26 +25,50 @@ def home():
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json(silent=True)
+    print("DATA RECEIVED:", data)
 
     if not data:
         send_telegram_message("❌ ما وصل JSON صحيح إلى webhook")
         return {"status": "error"}, 400
 
     pair = data.get("pair", "XAUUSD")
-    timeframe = data.get("timeframe", "15m")
-    direction = str(data.get("direction", "BUY")).upper()
+    timeframe = data.get("timeframe", "")
+    direction = str(data.get("direction", "")).upper()
+    strength = str(data.get("strength", "")).upper()
 
-    entry = data.get("entry", "0")
-    sl = data.get("sl", "0")
-    tp1 = data.get("tp1", "0")
-    tp2 = data.get("tp2", "0")
-    tp3 = data.get("tp3", "0")
+    # alerts الخاصة بالإدارة: TP1 / TP2 / TP3 / SL
+    manage_message = data.get("message")
+    if manage_message:
+        text = f"""👑 ROYAL TRADE UPDATE 👑
+
+📊 Pair: {pair}
+⏱️ Timeframe: {timeframe}
+
+{manage_message}"""
+        send_telegram_message(text)
+        return {"status": "sent_manage_alert"}, 200
+
+    # alerts الخاصة بالدخول
+    entry = data.get("entry")
+    sl = data.get("sl")
+    tp1 = data.get("tp1")
+    tp2 = data.get("tp2")
+    tp3 = data.get("tp3")
+
+    if direction == "BUY":
+        direction_text = "🟢 BUY"
+    elif direction == "SELL":
+        direction_text = "🔴 SELL"
+    else:
+        direction_text = "⚪️ UNKNOWN"
+
+    strength_line = f"\n⚡️ Strength: {strength}" if strength else ""
 
     message = f"""👑 ROYAL TRADE SIGNAL 👑
 
 📊 Pair: {pair}
 ⏱️ Timeframe: {timeframe}
-📌 Direction: {direction}
+📌 Direction: {direction_text}{strength_line}
 
 🎯 Entry: {entry}
 🛑 SL: {sl}
@@ -55,7 +79,7 @@ def webhook():
 """
 
     send_telegram_message(message)
-    return {"status": "sent"}, 200
+    return {"status": "sent_entry_alert"}, 200
 
 
 if __name__ == "__main__":
