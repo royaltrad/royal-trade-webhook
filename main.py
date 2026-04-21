@@ -15,7 +15,7 @@ def send_telegram_message(text):
         "chat_id": CHAT_ID,
         "text": text
     }
-    r = requests.post(url, json=payload)
+    r = requests.post(url, json=payload, timeout=10)
     print("TELEGRAM STATUS:", r.status_code)
     print("TELEGRAM RESPONSE:", r.text)
     return r
@@ -45,6 +45,12 @@ def format_strength(strength):
     strength = str(strength).upper().strip()
     if not strength:
         return ""
+    if strength == "STRONG":
+        return "⚡️ STRONG"
+    if strength == "NORMAL":
+        return "✨ NORMAL"
+    if strength == "WEAK":
+        return "⚠️ WEAK"
     return f"⚡️ {strength}"
 
 
@@ -66,14 +72,13 @@ def build_entry_message(pair, timeframe, direction, strength, entry, sl, tp1, tp
     lines += [
         "",
         f"🎯 Entry: {entry}",
-        f"🛑 SL: {sl} (وهمي)",
+        f"🛑 SL: {sl}",
         "",
         f"💰 TP1: {tp1}",
         f"💰 TP2: {tp2}",
         f"💰 TP3: {tp3}",
         "",
-        "⚠️ وقف الخسارة وهمي",
-        "🔒 عند وصول الهدف الأول انقل الستوب إلى نقطة الدخول",
+        "⚠️ عند وصول الهدف الأول انقل الستوب إلى نقطة الدخول",
         "",
         f"🕒 {now_text()}"
     ]
@@ -81,35 +86,45 @@ def build_entry_message(pair, timeframe, direction, strength, entry, sl, tp1, tp
     return "\n".join(lines)
 
 
-def normalize_manage_text(text):
-    t = str(text).strip()
-    upper_t = t.upper()
-
-    if "TP1" in upper_t:
-        return "✅ TP1 HIT\n🔒 Move SL to Entry"
-    if "TP2" in upper_t:
-        return "🎯 TP2 HIT\n🔒 SL remains at Entry"
-    if "TP3" in upper_t:
-        return "🏁 TP3 HIT\n💰 Full Target Achieved"
-    if "STOP LOSS" in upper_t or "SL HIT" in upper_t:
-        return "🛑 STOP LOSS HIT\n❌ Trade Closed"
-
-    return t
-
-
-def build_manage_message(pair, timeframe, raw_message):
+def build_event_message(pair, timeframe, side, strength, event_name, custom_message=""):
     tf = format_timeframe(timeframe)
-    msg = normalize_manage_text(raw_message)
+    side_line = format_direction(side) if side else ""
+    strength_line = format_strength(strength) if strength else ""
+
+    event_upper = str(event_name).upper().strip()
+
+    if event_upper == "TP1":
+        status_text = "✅ TP1 HIT\n🔒 Move SL to Entry"
+    elif event_upper == "TP2":
+        status_text = "🎯 TP2 HIT"
+    elif event_upper == "TP3":
+        status_text = "🏁 TP3 HIT\n💰 Full Target Achieved"
+    elif event_upper == "SL":
+        status_text = "🛑 STOP LOSS HIT\n❌ Trade Closed"
+    elif event_upper == "BREAKEVEN":
+        status_text = "🔒 BREAKEVEN HIT\n✅ Trade Closed at Entry"
+    else:
+        status_text = custom_message if custom_message else f"📢 {event_upper}"
 
     lines = [
         "👑 ROYAL TRADE UPDATE 👑",
         "",
         f"📊 {pair} | {tf}",
+    ]
+
+    if side_line:
+        lines.append(side_line)
+
+    if strength_line:
+        lines.append(strength_line)
+
+    lines += [
         "",
-        msg,
+        status_text,
         "",
         f"🕒 {now_text()}"
     ]
+
     return "\n".join(lines)
 
 
@@ -124,41 +139,62 @@ def webhook():
     print("DATA RECEIVED:", data)
 
     if not data:
-        send_telegram_message("❌ ما وصل JSON صحيح إلى webhook")
-        return {"status": "error"}, 400
+        send_telegram_message("❌ No valid JSON received on /webhook")
+        return {"status": "error", "message": "invalid json"}, 400
 
-    pair = data.get("pair", "XAUUSD")
+    # fields from Pine alert()
+    event_name = str(data.get("event", "")).strip().upper()
+    pair = data.get("ticker", data.get("pair", "XAUUSD"))
     timeframe = data.get("timeframe", "15")
-
-    manage_message = data.get("message")
-    if manage_message:
-        text = build_manage_message(pair, timeframe, manage_message)
-        send_telegram_message(text)
-        return {"status": "sent_manage_alert"}, 200
-
-    direction = data.get("direction", "")
+    side = data.get("side", data.get("direction", ""))
     strength = data.get("strength", "")
+    custom_message = data.get("message", "")
 
-    entry = data.get("entry", "0")
-    sl = data.get("sl", "0")
-    tp1 = data.get("tp1", "0")
-    tp2 = data.get("tp2", "0")
-    tp3 = data.get("tp3", "0")
+    # ENTRY ALERT
+    if event_name == "ENTRY":
+        entry = data.get("entry", "0")
+        sl = data.get("sl", "0")
+        tp1 = data.get("tp1", "0")
+        tp2 = data.get("tp2", "0")
+        tp3 = data.get("tp3", "0")
 
-    text = build_entry_message(
-        pair=pair,
-        timeframe=timeframe,
-        direction=direction,
-        strength=strength,
-        entry=entry,
-        sl=sl,
-        tp1=tp1,
-        tp2=tp2,
-        tp3=tp3
+        text = build_entry_message(
+            pair=pair,
+            timeframe=timeframe,
+            direction=side,
+            strength=strength,
+            entry=entry,
+            sl=sl,
+            tp1=tp1,
+            tp2=tp2,
+            tp3=tp3
+        )
+
+        send_telegram_message(text)
+        return {"status": "sent_entry_alert"}, 200
+
+    # TP1 / TP2 / TP3 / SL / BREAKEVEN
+    if event_name in ["TP1", "TP2", "TP3", "SL", "BREAKEVEN"]:
+        text = build_event_message(
+            pair=pair,
+            timeframe=timeframe,
+            side=side,
+            strength=strength,
+            event_name=event_name,
+            custom_message=custom_message
+        )
+        send_telegram_message(text)
+        return {"status": "sent_event_alert", "event": event_name}, 200
+
+    # fallback لو وصل شي مختلف
+    fallback_text = (
+        "👑 ROYAL TRADE WEBHOOK 👑\n\n"
+        f"📊 {pair} | {format_timeframe(timeframe)}\n"
+        f"📩 RAW DATA:\n{data}\n\n"
+        f"🕒 {now_text()}"
     )
-
-    send_telegram_message(text)
-    return {"status": "sent_entry_alert"}, 200
+    send_telegram_message(fallback_text)
+    return {"status": "sent_fallback"}, 200
 
 
 if __name__ == "__main__":
