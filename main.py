@@ -10,19 +10,11 @@ CHAT_ID = "5170185345"
 
 
 def send_telegram_message(text):
-
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": text
-    }
-
+    payload = {"chat_id": CHAT_ID, "text": text}
     r = requests.post(url, json=payload, timeout=10)
-
     print("TELEGRAM STATUS:", r.status_code)
     print("TELEGRAM RESPONSE:", r.text)
-
     return r
 
 
@@ -31,142 +23,70 @@ def now_text():
 
 
 def format_timeframe(tf):
-
     tf = str(tf).strip().upper()
-
-    if tf.isdigit():
-        return f"{tf}M"
-
-    return tf
+    return f"{tf}M" if tf.isdigit() else tf
 
 
-def format_direction(direction):
-
-    direction = str(direction).upper().strip()
-
-    if direction == "BUY":
-        return "📈 BUY"
-
-    if direction == "SELL":
-        return "📉 SELL"
-
-    return f"📍 {direction}"
+def format_direction(side):
+    side = str(side).upper().strip()
+    if side == "BUY":
+        return "🟢 Direction: BUY"
+    if side == "SELL":
+        return "🔴 Direction: SELL"
+    return f"📍 Direction: {side}"
 
 
-def format_strength(strength):
-
-    strength = str(strength).upper().strip()
-
-    if not strength:
-        return ""
-
-    if strength == "STRONG":
-        return "⚡️ STRONG"
-
-    if strength == "NORMAL":
-        return "✨ NORMAL"
-
-    if strength == "WEAK":
-        return "⚠️ WEAK"
-
-    return f"⚡️ {strength}"
-
-
-def build_entry_message(
-    pair,
-    timeframe,
-    direction,
-    strength,
-    entry,
-    sl,
-    tp1,
-    tp2,
-    tp3
-):
-
-    direction_line = format_direction(direction)
-    strength_line = format_strength(strength)
-
+def build_trade_message(event, pair, timeframe, side, entry, sl, vsl, tp1, tp2, tp3, lot, custom_message=""):
     tf = format_timeframe(timeframe)
+    event = str(event).upper().strip()
+
+    if event == "ENTRY":
+        title = "👑 ROYAL TRADE SIGNAL 👑"
+        status = "📌 Trade Activated"
+    elif event == "TP1":
+        title = "👑 ROYAL TRADE TP1 👑"
+        status = "✅ TP1 HIT\n🔒 Move SL to Entry"
+    elif event == "TP2":
+        title = "👑 ROYAL TRADE TP2 👑"
+        status = "🎯 TP2 HIT"
+    elif event == "TP3":
+        title = "👑 ROYAL TRADE TP3 👑"
+        status = "🏆 TP3 HIT\n💰 Full Target Achieved"
+    elif event == "SL":
+        title = "👑 ROYAL TRADE SL 👑"
+        status = "🛑 STOP LOSS HIT\n❌ Trade Closed"
+    elif event == "BREAKEVEN":
+        title = "👑 ROYAL TRADE BREAKEVEN 👑"
+        status = "📌 Risk Management Active\n🔒 Breakeven Activated"
+    else:
+        title = "👑 ROYAL TRADE UPDATE 👑"
+        status = custom_message or "📢 Trade Update"
 
     lines = [
-        "👑 ROYAL TRADE SIGNAL 👑",
+        title,
         "",
-        f"📊 {pair} | {tf}",
-        direction_line,
-    ]
-
-    if strength_line:
-        lines.append(strength_line)
-
-    lines += [
+        f"📊 Pair: {pair}",
+        f"⏱️ TF: {tf}",
+        "",
+        format_direction(side),
+        "",
+        "━━━━━━━━━━━━━━",
         "",
         f"🎯 Entry: {entry}",
-        f"🛑 SL: {sl}",
+        f"🛡 Virtual SL: {vsl}",
         "",
-        f"💰 TP1: {tp1}",
-        f"💰 TP2: {tp2}",
-        f"💰 TP3: {tp3}",
+        "⚠️ SL وهمي ويُحسب حسب إعدادات المؤشر",
         "",
-        "⚠️ عند وصول TP1 انقل الستوب إلى الدخول",
+        "━━━━━━━━━━━━━━",
         "",
-        f"🕒 {now_text()}",
+        f"🎖 TP1 → {tp1}",
+        f"🎖 TP2 → {tp2}",
+        f"🏆 TP3 → {tp3}",
         "",
-        "#Royal_Trade"
-    ]
-
-    return "\n".join(lines)
-
-
-def build_event_message(
-    pair,
-    timeframe,
-    side,
-    strength,
-    event_name,
-    custom_message=""
-):
-
-    tf = format_timeframe(timeframe)
-
-    side_line = format_direction(side) if side else ""
-    strength_line = format_strength(strength) if strength else ""
-
-    event_upper = str(event_name).upper().strip()
-
-    if event_upper == "TP1":
-        status_text = "✅ TP1 HIT\n🔒 Move SL to Entry"
-
-    elif event_upper == "TP2":
-        status_text = "🎯 TP2 HIT"
-
-    elif event_upper == "TP3":
-        status_text = "🏁 TP3 HIT\n💰 Full Target Achieved"
-
-    elif event_upper == "SL":
-        status_text = "🛑 STOP LOSS HIT\n❌ Trade Closed"
-
-    elif event_upper == "BREAKEVEN":
-        status_text = "🔒 BREAKEVEN HIT\n✅ Trade Closed at Entry"
-
-    else:
-        status_text = custom_message if custom_message else f"📢 {event_upper}"
-
-    lines = [
-        "👑 ROYAL TRADE UPDATE 👑",
+        "━━━━━━━━━━━━━━",
         "",
-        f"📊 {pair} | {tf}",
-    ]
-
-    if side_line:
-        lines.append(side_line)
-
-    if strength_line:
-        lines.append(strength_line)
-
-    lines += [
-        "",
-        status_text,
+        f"📌 Lot: {lot}",
+        status,
         "",
         f"🕒 {now_text()}",
         "",
@@ -178,142 +98,63 @@ def build_event_message(
 
 @app.route("/", methods=["GET"])
 def home():
-
     return "ROYAL TRADE WEBHOOK IS RUNNING", 200
 
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-
     data = request.get_json(silent=True)
-
     print("DATA RECEIVED:", data)
 
-    # ===================================
-    # إذا التنبيه نص عادي
-    # ===================================
-
     if not data:
-
         raw_text = request.data.decode("utf-8")
-
         print("RAW TEXT:", raw_text)
 
         if raw_text:
-
             send_telegram_message(raw_text)
+            return {"status": "plain_text_sent"}, 200
 
-            return {
-                "status": "plain_text_sent"
-            }, 200
+        return {"status": "empty"}, 400
 
-        return {
-            "status": "empty"
-        }, 400
+    event_name = str(data.get("event", "")).strip().upper()
+    pair = data.get("ticker", data.get("pair", "XAUUSD"))
+    timeframe = data.get("timeframe", "15")
+    side = data.get("side", data.get("direction", ""))
+    entry = data.get("entry", "-")
+    sl = data.get("sl", "-")
+    vsl = data.get("virtual_sl", sl)
+    tp1 = data.get("tp1", "-")
+    tp2 = data.get("tp2", "-")
+    tp3 = data.get("tp3", "-")
+    lot = data.get("lot", "-")
+    custom_message = data.get("message", "")
 
-    # ===================================
-    # JSON ALERTS
-    # ===================================
-
-    event_name = str(
-        data.get("event", "")
-    ).strip().upper()
-
-    pair = data.get(
-        "ticker",
-        data.get("pair", "XAUUSD")
-    )
-
-    timeframe = data.get(
-        "timeframe",
-        "15"
-    )
-
-    side = data.get(
-        "side",
-        data.get("direction", "")
-    )
-
-    strength = data.get(
-        "strength",
-        ""
-    )
-
-    custom_message = data.get(
-        "message",
-        ""
-    )
-
-    # ENTRY ALERT
-
-    if event_name == "ENTRY":
-
-        entry = data.get("entry", "0")
-        sl = data.get("sl", "0")
-
-        tp1 = data.get("tp1", "0")
-        tp2 = data.get("tp2", "0")
-        tp3 = data.get("tp3", "0")
-
-        text = build_entry_message(
-            pair=pair,
-            timeframe=timeframe,
-            direction=side,
-            strength=strength,
-            entry=entry,
-            sl=sl,
-            tp1=tp1,
-            tp2=tp2,
-            tp3=tp3
-        )
-
-        send_telegram_message(text)
-
-        return {
-            "status": "sent_entry_alert"
-        }, 200
-
-    # TP / SL / BREAKEVEN
-
-    if event_name in [
-        "TP1",
-        "TP2",
-        "TP3",
-        "SL",
-        "BREAKEVEN"
-    ]:
-
-        text = build_event_message(
+    if event_name in ["ENTRY", "TP1", "TP2", "TP3", "SL", "BREAKEVEN"]:
+        text = build_trade_message(
+            event=event_name,
             pair=pair,
             timeframe=timeframe,
             side=side,
-            strength=strength,
-            event_name=event_name,
+            entry=entry,
+            sl=sl,
+            vsl=vsl,
+            tp1=tp1,
+            tp2=tp2,
+            tp3=tp3,
+            lot=lot,
             custom_message=custom_message
         )
 
         send_telegram_message(text)
+        return {"status": "sent", "event": event_name}, 200
 
-        return {
-            "status": "sent_event_alert"
-        }, 200
+    if custom_message:
+        send_telegram_message(custom_message)
+        return {"status": "custom_message_sent"}, 200
 
-    # أي JSON ثاني
-
-    send_telegram_message(str(data))
-
-    return {
-        "status": "json_received"
-    }, 200
+    return {"status": "ignored_unknown_event"}, 200
 
 
 if __name__ == "__main__":
-
-    port = int(
-        os.environ.get("PORT", 10000)
-    )
-
-    app.run(
-        host="0.0.0.0",
-        port=port
-    )
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
