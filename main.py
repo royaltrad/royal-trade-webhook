@@ -29,11 +29,7 @@ def send_telegram_message(text):
 
 def send_to_mt5(data):
     try:
-        r = requests.post(
-            MT5_WEBHOOK_URL,
-            json=data,
-            timeout=10
-        )
+        r = requests.post(MT5_WEBHOOK_URL, json=data, timeout=10)
 
         print("MT5 STATUS:", r.status_code)
         print("MT5 RESPONSE:", r.text)
@@ -66,6 +62,45 @@ def format_direction(side):
         return "🔴 Direction: SELL"
 
     return f"📍 Direction: {side}"
+
+
+def risk_management_text(event):
+    event = str(event).upper().strip()
+
+    if event == "TP1":
+        return (
+            "📝 Risk Management:\n"
+            "• TP1 تم تحقيقه بنجاح\n"
+            "• يُفضّل نقل الستوب إلى نقطة الدخول\n"
+            "• خفّف المخاطرة واحمِ الأرباح\n"
+            "• التزم بإدارة رأس المال"
+        )
+
+    if event == "SL":
+        return (
+            "📝 Risk Management:\n"
+            "• الصفقة أُغلقت على وقف الخسارة\n"
+            "• لا تدخل صفقة جديدة بدون إشارة واضحة\n"
+            "• التزم بنسبة مخاطرة ثابتة\n"
+            "• لا تعوّض الخسارة بعشوائية"
+        )
+
+    if event == "TP3":
+        return (
+            "📝 Risk Management:\n"
+            "• تم تحقيق الهدف الكامل\n"
+            "• لا تطارد السوق بعد الهدف\n"
+            "• احمِ أرباحك وانتظر فرصة جديدة\n"
+            "• التداول يحتاج انضباط"
+        )
+
+    return (
+        "📝 Risk Management:\n"
+        "• استخدم إدارة رأس مال مناسبة\n"
+        "• لا تخاطر بأكثر من 1% - 2% من الحساب\n"
+        "• عند وصول TP1 يُفضّل نقل الستوب إلى الدخول\n"
+        "• الصفقة حسب إعدادات المؤشر وليست نصيحة مالية"
+    )
 
 
 def build_trade_message(
@@ -136,7 +171,12 @@ def build_trade_message(
         "━━━━━━━━━━━━━━",
         "",
         f"📌 Lot: {lot}",
+        "",
         status,
+        "",
+        risk_management_text(event),
+        "",
+        "━━━━━━━━━━━━━━",
         "",
         f"🕒 {now_text()}",
         "",
@@ -159,14 +199,8 @@ def webhook():
 
     if not data:
         raw_text = request.data.decode("utf-8")
-
         print("RAW TEXT:", raw_text)
-
-        if raw_text:
-            send_telegram_message(raw_text)
-            return {"status": "plain_text_sent"}, 200
-
-        return {"status": "empty"}, 400
+        return {"status": "empty_or_invalid_json"}, 400
 
     event_name = str(data.get("event", "")).strip().upper()
 
@@ -184,14 +218,7 @@ def webhook():
 
     lot = data.get("lot", "-")
 
-    if event_name in [
-        "ENTRY",
-        "TP1",
-        "TP2",
-        "TP3",
-        "SL",
-        "BREAKEVEN"
-    ]:
+    if event_name in ["ENTRY", "TP1", "TP2", "TP3", "SL", "BREAKEVEN"]:
         text = build_trade_message(
             event=event_name,
             pair=pair,
