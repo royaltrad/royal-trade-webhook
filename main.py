@@ -30,7 +30,14 @@ def send_telegram_message(text):
 
 def send_to_mt5(data):
     try:
-        r = requests.post(MT5_WEBHOOK_URL, json=data, timeout=10)
+        r = requests.post(
+            MT5_WEBHOOK_URL,
+            json=data,
+            headers={
+                "ngrok-skip-browser-warning": "true"
+            },
+            timeout=10
+        )
 
         print("MT5 STATUS:", r.status_code)
         print("MT5 RESPONSE:", r.text)
@@ -109,7 +116,18 @@ def risk_management_text(event):
 def normalize_event(event):
     event = str(event).upper().strip()
 
-    if event in ["CHOCH_WAIT_ZONE", "BUY", "SELL", "SIGNAL", "TRADE", "OPEN"]:
+    if event in [
+        "CHOCH_WAIT_ZONE",
+        "READY",
+        "READY_ENTRY",
+        "READY_TO_ENTER",
+        "WAIT_ZONE",
+        "BUY",
+        "SELL",
+        "SIGNAL",
+        "TRADE",
+        "OPEN"
+    ]:
         return "ENTRY"
 
     return event
@@ -222,6 +240,32 @@ def parse_request_data():
     }
 
 
+def build_mt5_payload(data, event_name, pair, timeframe, side, entry, sl, vsl, tp1, tp2, tp3, lot):
+    mt5_data = data.copy()
+
+    mt5_data["event"] = "ENTRY"
+    mt5_data["ticker"] = pair
+    mt5_data["pair"] = pair
+    mt5_data["timeframe"] = timeframe
+    mt5_data["side"] = str(side).upper().strip()
+    mt5_data["direction"] = str(side).upper().strip()
+
+    mt5_data["entry"] = entry
+    mt5_data["sl"] = sl
+    mt5_data["virtual_sl"] = vsl
+
+    mt5_data["tp1"] = tp1
+    mt5_data["tp2"] = tp2
+    mt5_data["tp3"] = tp3
+
+    mt5_data["lot"] = lot
+
+    mt5_data["source_event"] = event_name
+    mt5_data["trade_mode"] = "AUTO_ENTRY"
+
+    return mt5_data
+
+
 @app.route("/", methods=["GET"])
 def home():
     return "ROYAL TRADE WEBHOOK IS RUNNING", 200
@@ -244,9 +288,7 @@ def webhook():
         if msg:
             send_telegram_message(msg)
 
-        return {
-            "status": "plain_text_sent"
-        }, 200
+        return {"status": "plain_text_sent"}, 200
 
     pair = data.get("ticker", data.get("pair", "XAUUSD"))
     timeframe = data.get("timeframe", data.get("tf", "15"))
@@ -293,8 +335,25 @@ def webhook():
         send_telegram_message(text)
 
     if normalized_event in mt5_events:
+        mt5_data = build_mt5_payload(
+            data=data,
+            event_name=event_name,
+            pair=pair,
+            timeframe=timeframe,
+            side=side,
+            entry=entry,
+            sl=sl,
+            vsl=vsl,
+            tp1=tp1,
+            tp2=tp2,
+            tp3=tp3,
+            lot=lot
+        )
+
         print("SENDING SIGNAL TO MT5...")
-        send_to_mt5(data)
+        print("MT5 PAYLOAD:", mt5_data)
+
+        send_to_mt5(mt5_data)
 
     return {
         "status": "processed",
