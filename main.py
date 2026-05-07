@@ -29,7 +29,11 @@ def send_telegram_message(text):
 
 def send_to_mt5(data):
     try:
-        r = requests.post(MT5_WEBHOOK_URL, json=data, timeout=10)
+        r = requests.post(
+            MT5_WEBHOOK_URL,
+            json=data,
+            timeout=10
+        )
 
         print("MT5 STATUS:", r.status_code)
         print("MT5 RESPONSE:", r.text)
@@ -47,8 +51,10 @@ def now_text():
 
 def format_timeframe(tf):
     tf = str(tf).strip().upper()
+
     if tf.isdigit():
         return f"{tf}M"
+
     return tf
 
 
@@ -103,6 +109,15 @@ def risk_management_text(event):
     )
 
 
+def normalize_event(event):
+    event = str(event).upper().strip()
+
+    if event in ["CHOCH_WAIT_ZONE", "BUY", "SELL", "SIGNAL", "TRADE", "OPEN"]:
+        return "ENTRY"
+
+    return event
+
+
 def build_trade_message(
     event,
     pair,
@@ -117,7 +132,7 @@ def build_trade_message(
     lot
 ):
     tf = format_timeframe(timeframe)
-    event = str(event).upper().strip()
+    event = normalize_event(event)
 
     if event == "ENTRY":
         title = "👑 ROYAL TRADE SIGNAL 👑"
@@ -203,6 +218,7 @@ def webhook():
         return {"status": "empty_or_invalid_json"}, 400
 
     event_name = str(data.get("event", "")).strip().upper()
+    normalized_event = normalize_event(event_name)
 
     pair = data.get("ticker", data.get("pair", "XAUUSD"))
     timeframe = data.get("timeframe", "15")
@@ -218,9 +234,22 @@ def webhook():
 
     lot = data.get("lot", "-")
 
-    if event_name in ["ENTRY", "TP1", "TP2", "TP3", "SL", "BREAKEVEN"]:
+    telegram_events = [
+        "ENTRY",
+        "TP1",
+        "TP2",
+        "TP3",
+        "SL",
+        "BREAKEVEN"
+    ]
+
+    mt5_events = [
+        "ENTRY"
+    ]
+
+    if normalized_event in telegram_events:
         text = build_trade_message(
-            event=event_name,
+            event=normalized_event,
             pair=pair,
             timeframe=timeframe,
             side=side,
@@ -235,16 +264,14 @@ def webhook():
 
         send_telegram_message(text)
 
-        if event_name == "ENTRY":
-            send_to_mt5(data)
-
-        return {
-            "status": "sent",
-            "event": event_name
-        }, 200
+    if normalized_event in mt5_events:
+        print("SENDING SIGNAL TO MT5...")
+        send_to_mt5(data)
 
     return {
-        "status": "ignored_unknown_event"
+        "status": "processed",
+        "original_event": event_name,
+        "normalized_event": normalized_event
     }, 200
 
 
