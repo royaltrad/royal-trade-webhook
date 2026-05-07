@@ -8,9 +8,10 @@ app = Flask(__name__)
 BOT_TOKEN = "8614676714:AAEggjQ79qRGlP6Bl9k74A2Rfo8uuTDXBEQ"
 CHAT_ID = "5170185345"
 
+MT5_WEBHOOK_URL = "https://ladder-mortally-pouncing.ngrok-free.dev/webhook"
+
 
 def send_telegram_message(text):
-
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
     payload = {
@@ -26,22 +27,36 @@ def send_telegram_message(text):
     return r
 
 
+def send_to_mt5(data):
+    try:
+        r = requests.post(
+            MT5_WEBHOOK_URL,
+            json=data,
+            timeout=10
+        )
+
+        print("MT5 STATUS:", r.status_code)
+        print("MT5 RESPONSE:", r.text)
+
+        return r
+
+    except Exception as e:
+        print("MT5 SEND ERROR:", e)
+        return None
+
+
 def now_text():
     return datetime.now().strftime("%H:%M")
 
 
 def format_timeframe(tf):
-
     tf = str(tf).strip().upper()
-
     if tf.isdigit():
         return f"{tf}M"
-
     return tf
 
 
 def format_direction(side):
-
     side = str(side).upper().strip()
 
     if side == "BUY":
@@ -66,9 +81,7 @@ def build_trade_message(
     tp3,
     lot
 ):
-
     tf = format_timeframe(timeframe)
-
     event = str(event).upper().strip()
 
     if event == "ENTRY":
@@ -135,79 +148,41 @@ def build_trade_message(
 
 @app.route("/", methods=["GET"])
 def home():
-
     return "ROYAL TRADE WEBHOOK IS RUNNING", 200
 
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-
     data = request.get_json(silent=True)
 
     print("DATA RECEIVED:", data)
 
-    # =====================================
-    # إذا alert نص عادي
-    # =====================================
-
     if not data:
-
         raw_text = request.data.decode("utf-8")
 
         print("RAW TEXT:", raw_text)
 
         if raw_text:
-
             send_telegram_message(raw_text)
+            return {"status": "plain_text_sent"}, 200
 
-            return {
-                "status": "plain_text_sent"
-            }, 200
+        return {"status": "empty"}, 400
 
-        return {
-            "status": "empty"
-        }, 400
+    event_name = str(data.get("event", "")).strip().upper()
 
-    # =====================================
-    # JSON ALERTS
-    # =====================================
-
-    event_name = str(
-        data.get("event", "")
-    ).strip().upper()
-
-    pair = data.get(
-        "ticker",
-        data.get("pair", "XAUUSD")
-    )
-
-    timeframe = data.get(
-        "timeframe",
-        "15"
-    )
-
-    side = data.get(
-        "side",
-        data.get("direction", "")
-    )
+    pair = data.get("ticker", data.get("pair", "XAUUSD"))
+    timeframe = data.get("timeframe", "15")
+    side = data.get("side", data.get("direction", ""))
 
     entry = data.get("entry", "-")
     sl = data.get("sl", "-")
-
-    vsl = data.get(
-        "virtual_sl",
-        sl
-    )
+    vsl = data.get("virtual_sl", sl)
 
     tp1 = data.get("tp1", "-")
     tp2 = data.get("tp2", "-")
     tp3 = data.get("tp3", "-")
 
     lot = data.get("lot", "-")
-
-    # =====================================
-    # ENTRY / TP / SL / BE
-    # =====================================
 
     if event_name in [
         "ENTRY",
@@ -217,7 +192,6 @@ def webhook():
         "SL",
         "BREAKEVEN"
     ]:
-
         text = build_trade_message(
             event=event_name,
             pair=pair,
@@ -234,6 +208,9 @@ def webhook():
 
         send_telegram_message(text)
 
+        if event_name == "ENTRY":
+            send_to_mt5(data)
+
         return {
             "status": "sent",
             "event": event_name
@@ -245,10 +222,7 @@ def webhook():
 
 
 if __name__ == "__main__":
-
-    port = int(
-        os.environ.get("PORT", 10000)
-    )
+    port = int(os.environ.get("PORT", 10000))
 
     app.run(
         host="0.0.0.0",
