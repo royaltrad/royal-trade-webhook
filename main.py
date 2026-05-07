@@ -10,9 +10,9 @@ app = Flask(__name__)
 BOT_TOKEN = "8614676714:AAEggjQ79qRGlP6Bl9k74A2Rfo8uuTDXBEQ"
 CHAT_ID = "5170185345"
 
+# EA يسحب من /last_signal، لذلك ngrok اختياري وليس ضروري هنا
 MT5_WEBHOOK_URL = "https://ladder-mortally-pouncing.ngrok-free.dev/webhook"
 
-# آخر إشارة حتى يسحبها EA من /last_signal
 LAST_SIGNAL = {}
 
 
@@ -23,39 +23,15 @@ def send_telegram_message(text):
             return None
 
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        payload = {
-            "chat_id": CHAT_ID,
-            "text": text
-        }
-
+        payload = {"chat_id": CHAT_ID, "text": text}
         r = requests.post(url, json=payload, timeout=10)
 
         print("TELEGRAM STATUS:", r.status_code)
         print("TELEGRAM RESPONSE:", r.text)
-
         return r
 
     except Exception as e:
         print("TELEGRAM ERROR:", e)
-        return None
-
-
-def send_to_mt5(data):
-    try:
-        r = requests.post(
-            MT5_WEBHOOK_URL,
-            json=data,
-            headers={"ngrok-skip-browser-warning": "true"},
-            timeout=10
-        )
-
-        print("MT5 DIRECT STATUS:", r.status_code)
-        print("MT5 DIRECT RESPONSE:", r.text)
-
-        return r
-
-    except Exception as e:
-        print("MT5 DIRECT ERROR:", e)
         return None
 
 
@@ -65,13 +41,10 @@ def now_text():
 
 def clean_side(value):
     text = str(value).upper().strip()
-
     if "BUY" in text:
         return "BUY"
-
     if "SELL" in text:
         return "SELL"
-
     return text
 
 
@@ -105,28 +78,25 @@ def parse_data():
     except Exception:
         pass
 
-    return {
-        "event": "PLAIN_TEXT",
-        "message": raw_text
-    }, raw_text
+    return {"event": "PLAIN_TEXT", "message": raw_text}, raw_text
 
 
 def detect_event(data, raw_text):
+    event_raw = str(get_value(data, "event", default="")).upper().strip()
+    pending_raw = str(get_value(data, "pending_type", "order_type", default="")).upper().strip()
+    side_raw = str(get_value(data, "side", "direction", default="")).upper().strip()
     check = (str(data) + " " + str(raw_text)).upper()
 
-    event_raw = str(get_value(data, "event", default="")).upper().strip()
-    side_raw = str(get_value(data, "side", "direction", default="")).upper().strip()
-    pending_raw = str(get_value(data, "pending_type", "order_type", default="")).upper().strip()
-
-    # أهم شي: LIMIT ما يتحول ENTRY
     if event_raw == "LIMIT" or pending_raw in ["BUY_LIMIT", "SELL_LIMIT"]:
         return "LIMIT"
 
     if event_raw in ["ENTRY", "TP1", "TP2", "TP3", "SL", "BREAKEVEN"]:
         return event_raw
 
-    # إشارات الكود القديم
-    if "CHOCH_WAIT_ZONE" in check or "READY" in check:
+    if "CHOCH_WAIT_ZONE" in check:
+        return "LIMIT"
+
+    if "READY" in check:
         return "ENTRY"
 
     if "BUY" in side_raw or "SELL" in side_raw:
@@ -155,7 +125,6 @@ def build_message(data, event_name):
     pair = get_value(data, "ticker", "pair", default="XAUUSD")
     tf = get_value(data, "timeframe", "tf", default="1")
     side = clean_side(get_value(data, "side", "direction", default=""))
-
     pending_type = detect_pending_type(data, event_name)
 
     entry = get_value(data, "entry", default="-")
@@ -165,11 +134,7 @@ def build_message(data, event_name):
     tp3 = get_value(data, "tp3", default="-")
     lot = get_value(data, "lot", default="-")
 
-    direction_line = (
-        "🟢 Direction: BUY" if side == "BUY"
-        else "🔴 Direction: SELL" if side == "SELL"
-        else f"Direction: {side}"
-    )
+    direction_line = "🟢 Direction: BUY" if side == "BUY" else "🔴 Direction: SELL" if side == "SELL" else f"Direction: {side}"
 
     if event_name == "LIMIT":
         title = "👑 ROYAL TRADE LIMIT ORDER 👑"
@@ -179,19 +144,19 @@ def build_message(data, event_name):
         status = "📌 Trade Activated"
     elif event_name == "TP1":
         title = "👑 ROYAL TRADE TP1 👑"
-        status = "✅ TP1 HIT\n🔒 Move SL to Entry"
+        status = "✅ TP1 HIT\n💰 Trade Closed"
     elif event_name == "TP2":
         title = "👑 ROYAL TRADE TP2 👑"
         status = "🎯 TP2 HIT"
     elif event_name == "TP3":
         title = "👑 ROYAL TRADE TP3 👑"
-        status = "🏆 TP3 HIT"
+        status = "🏆 TP3 HIT\n💰 Trade Closed"
     elif event_name == "SL":
         title = "👑 ROYAL TRADE SL 👑"
-        status = "🛑 STOP LOSS HIT"
+        status = "🛑 VIRTUAL SL HIT\n❌ Trade Closed"
     elif event_name == "BREAKEVEN":
         title = "👑 ROYAL TRADE BREAKEVEN 👑"
-        status = "🟠 Breakeven Activated"
+        status = "🟠 Breakeven Hit\nTrade Closed"
     else:
         title = "👑 ROYAL TRADE UPDATE 👑"
         status = "📢 Trade Update"
@@ -207,9 +172,9 @@ def build_message(data, event_name):
 🎯 Entry: {entry}
 🛡 Virtual SL: {vsl}
 
-🎖 TP1 → {tp1}
-🎖 TP2 → {tp2}
-🏆 TP3 → {tp3}
+✅ TP1: {tp1}
+✅ TP2: {tp2}
+🏆 TP3: {tp3}
 
 ━━━━━━━━━━━━━━
 
@@ -217,11 +182,10 @@ def build_message(data, event_name):
 
 {status}
 
-📝 Risk Management:
-• لا تخاطر بأكثر من 1% - 2%
-• عند وصول TP1 يُفضّل نقل الستوب إلى الدخول
+📋 Risk Management:
+• SL وهمي حسب المؤشر
+• الصفقة تُغلق تلقائياً عند TP1 حسب طلبك
 • التزم بإدارة رأس المال
-• الصفقة حسب إعدادات المؤشر وليست نصيحة مالية
 
 🕒 {now_text()}
 
@@ -232,7 +196,6 @@ def build_signal_payload(data, event_name):
     pair = get_value(data, "ticker", "pair", default="XAUUSD")
     tf = get_value(data, "timeframe", "tf", default="1")
     side = clean_side(get_value(data, "side", "direction", default=""))
-
     pending_type = detect_pending_type(data, event_name)
 
     entry = get_value(data, "entry", default="")
@@ -245,7 +208,7 @@ def build_signal_payload(data, event_name):
 
     signal_id = str(get_value(data, "signal_id", "id", "time", default=""))
     if signal_id == "" or signal_id == "-":
-        signal_id = f"{int(time.time())}_{event_name}_{pair}_{side}_{entry}"
+        signal_id = f"{int(time.time())}_{event_name}_{pair}_{side}_{entry}_{tp1}"
 
     payload = {
         "status": "signal",
@@ -280,11 +243,8 @@ def home():
 
 @app.route("/last_signal", methods=["GET"])
 def last_signal():
-    global LAST_SIGNAL
-
     if not LAST_SIGNAL:
         return jsonify({"status": "no_signal"}), 200
-
     return jsonify(LAST_SIGNAL), 200
 
 
@@ -300,7 +260,6 @@ def webhook():
     global LAST_SIGNAL
 
     data, raw_text = parse_data()
-
     print("DATA:", data)
 
     if not data:
@@ -319,31 +278,22 @@ def webhook():
         msg = data.get("message", "")
         if msg:
             send_telegram_message(msg)
-
-        return {
-            "status": "plain_text_sent"
-        }, 200
+        return {"status": "plain_text_sent"}, 200
 
     if event_name in ["ENTRY", "LIMIT", "TP1", "TP2", "TP3", "SL", "BREAKEVEN", "UPDATE"]:
         text = build_message(data, event_name)
         send_telegram_message(text)
 
-    # نخزن فقط الإشارات التي يحتاجها MT5
-    if event_name in ["ENTRY", "LIMIT"]:
-        mt5_payload = build_signal_payload(data, event_name)
-        LAST_SIGNAL = mt5_payload
-
+    # مهم: نحفظ الدخول والخروج حتى الـ EA يسحبهم
+    if event_name in ["ENTRY", "LIMIT", "TP1", "TP3", "SL", "BREAKEVEN"]:
+        LAST_SIGNAL = build_signal_payload(data, event_name)
         print("SAVED LAST_SIGNAL:", LAST_SIGNAL)
-
-        # اختياري: مباشر للـ ngrok إذا بدك تضل تجرب
-        # EA أساساً يسحب من /last_signal
-        # send_to_mt5(mt5_payload)
 
     return {
         "status": "success",
         "event": event_name,
         "pending_type": data.get("pending_type", ""),
-        "saved_for_mt5": event_name in ["ENTRY", "LIMIT"]
+        "saved_for_mt5": event_name in ["ENTRY", "LIMIT", "TP1", "TP3", "SL", "BREAKEVEN"]
     }, 200
 
 
