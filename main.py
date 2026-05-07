@@ -1,6 +1,7 @@
 from flask import Flask, request
 import requests
 import os
+import json
 from datetime import datetime
 
 app = Flask(__name__)
@@ -29,11 +30,7 @@ def send_telegram_message(text):
 
 def send_to_mt5(data):
     try:
-        r = requests.post(
-            MT5_WEBHOOK_URL,
-            json=data,
-            timeout=10
-        )
+        r = requests.post(MT5_WEBHOOK_URL, json=data, timeout=10)
 
         print("MT5 STATUS:", r.status_code)
         print("MT5 RESPONSE:", r.text)
@@ -201,6 +198,30 @@ def build_trade_message(
     return "\n".join(lines)
 
 
+def parse_request_data():
+    data = request.get_json(silent=True)
+
+    if data:
+        return data
+
+    raw_text = request.data.decode("utf-8", errors="ignore").strip()
+    print("RAW TEXT:", raw_text)
+
+    if not raw_text:
+        return None
+
+    try:
+        fixed_text = raw_text.replace("'", '"')
+        return json.loads(fixed_text)
+    except Exception as e:
+        print("JSON PARSE ERROR:", e)
+
+    return {
+        "event": "PLAIN_TEXT",
+        "message": raw_text
+    }
+
+
 @app.route("/", methods=["GET"])
 def home():
     return "ROYAL TRADE WEBHOOK IS RUNNING", 200
@@ -208,25 +229,32 @@ def home():
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    data = request.get_json(silent=True)
+    data = parse_request_data()
 
     print("DATA RECEIVED:", data)
 
     if not data:
-        raw_text = request.data.decode("utf-8")
-        print("RAW TEXT:", raw_text)
-        return {"status": "empty_or_invalid_json"}, 400
+        return {"status": "empty"}, 200
 
     event_name = str(data.get("event", "")).strip().upper()
     normalized_event = normalize_event(event_name)
 
+    if normalized_event == "PLAIN_TEXT":
+        msg = data.get("message", "")
+        if msg:
+            send_telegram_message(msg)
+
+        return {
+            "status": "plain_text_sent"
+        }, 200
+
     pair = data.get("ticker", data.get("pair", "XAUUSD"))
-    timeframe = data.get("timeframe", "15")
+    timeframe = data.get("timeframe", data.get("tf", "15"))
     side = data.get("side", data.get("direction", ""))
 
     entry = data.get("entry", "-")
     sl = data.get("sl", "-")
-    vsl = data.get("virtual_sl", sl)
+    vsl = data.get("virtual_sl", data.get("vsl", sl))
 
     tp1 = data.get("tp1", "-")
     tp2 = data.get("tp2", "-")
