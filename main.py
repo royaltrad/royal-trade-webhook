@@ -1,3 +1,6 @@
+# main.py — النسخة المعدلة الجاهزة
+
+```python
 from flask import Flask, request
 import requests
 import os
@@ -86,48 +89,6 @@ def build_entry_message(pair, timeframe, direction, strength, entry, sl, tp1, tp
     return "\n".join(lines)
 
 
-def build_event_message(pair, timeframe, side, strength, event_name, custom_message=""):
-    tf = format_timeframe(timeframe)
-    side_line = format_direction(side) if side else ""
-    strength_line = format_strength(strength) if strength else ""
-
-    event_upper = str(event_name).upper().strip()
-
-    if event_upper == "TP1":
-        status_text = "✅ TP1 HIT\n🔒 Move SL to Entry"
-    elif event_upper == "TP2":
-        status_text = "🎯 TP2 HIT"
-    elif event_upper == "TP3":
-        status_text = "🏁 TP3 HIT\n💰 Full Target Achieved"
-    elif event_upper == "SL":
-        status_text = "🛑 STOP LOSS HIT\n❌ Trade Closed"
-    elif event_upper == "BREAKEVEN":
-        status_text = "🔒 BREAKEVEN HIT\n✅ Trade Closed at Entry"
-    else:
-        status_text = custom_message if custom_message else f"📢 {event_upper}"
-
-    lines = [
-        "👑 ROYAL TRADE UPDATE 👑",
-        "",
-        f"📊 {pair} | {tf}",
-    ]
-
-    if side_line:
-        lines.append(side_line)
-
-    if strength_line:
-        lines.append(strength_line)
-
-    lines += [
-        "",
-        status_text,
-        "",
-        f"🕒 {now_text()}"
-    ]
-
-    return "\n".join(lines)
-
-
 @app.route("/", methods=["GET"])
 def home():
     return "ROYAL TRADE WEBHOOK IS RUNNING", 200
@@ -135,23 +96,38 @@ def home():
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
+
     data = request.get_json(silent=True)
     print("DATA RECEIVED:", data)
 
+    # ==========================================
+    # إذا التنبيه نص عادي وليس JSON
+    # ==========================================
     if not data:
-        send_telegram_message("❌ No valid JSON received on /webhook")
-        return {"status": "error", "message": "invalid json"}, 400
 
-    # fields from Pine alert()
+        raw_text = request.data.decode("utf-8")
+
+        print("RAW TEXT:", raw_text)
+
+        if raw_text:
+            send_telegram_message(raw_text)
+            return {"status": "plain_text_sent"}, 200
+
+        return {"status": "empty"}, 400
+
+    # ==========================================
+    # JSON ALERTS
+    # ==========================================
+
     event_name = str(data.get("event", "")).strip().upper()
     pair = data.get("ticker", data.get("pair", "XAUUSD"))
     timeframe = data.get("timeframe", "15")
     side = data.get("side", data.get("direction", ""))
     strength = data.get("strength", "")
-    custom_message = data.get("message", "")
 
-    # ENTRY ALERT
+    # ENTRY
     if event_name == "ENTRY":
+
         entry = data.get("entry", "0")
         sl = data.get("sl", "0")
         tp1 = data.get("tp1", "0")
@@ -173,30 +149,29 @@ def webhook():
         send_telegram_message(text)
         return {"status": "sent_entry_alert"}, 200
 
-    # TP1 / TP2 / TP3 / SL / BREAKEVEN
-    if event_name in ["TP1", "TP2", "TP3", "SL", "BREAKEVEN"]:
-        text = build_event_message(
-            pair=pair,
-            timeframe=timeframe,
-            side=side,
-            strength=strength,
-            event_name=event_name,
-            custom_message=custom_message
-        )
-        send_telegram_message(text)
-        return {"status": "sent_event_alert", "event": event_name}, 200
+    # أي JSON ثاني
+    send_telegram_message(str(data))
 
-    # fallback لو وصل شي مختلف
-    fallback_text = (
-        "👑 ROYAL TRADE WEBHOOK 👑\n\n"
-        f"📊 {pair} | {format_timeframe(timeframe)}\n"
-        f"📩 RAW DATA:\n{data}\n\n"
-        f"🕒 {now_text()}"
-    )
-    send_telegram_message(fallback_text)
-    return {"status": "sent_fallback"}, 200
+    return {"status": "json_received"}, 200
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+```
+
+## بعد التعديل:
+
+1. احفظ الملف.
+2. اعمل Push على GitHub.
+3. من Render اضغط:
+
+   * Manual Deploy
+   * Deploy latest commit
+
+هيك:
+
+* READY alerts النصية تشتغل.
+* JSON alerts تشتغل.
+* ما عاد يطلع:
+  ❌ No valid JSON received
